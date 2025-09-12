@@ -1,13 +1,13 @@
-using System.Runtime.CompilerServices;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
 
 namespace SurfTimer;
 
-internal class ReplayPlayer
+public class ReplayPlayer
 {
     /// <summary>
     /// Enable or Disable the replay bots.
@@ -63,7 +63,7 @@ internal class ReplayPlayer
         _logger = SurfTimer.ServiceProvider.GetRequiredService<ILogger<ReplayPlayer>>();
     }
 
-    public void ResetReplay()
+    internal void ResetReplay()
     {
         this.CurrentFrameTick = 0;
         this.FrameTickIncrement = 1;
@@ -74,7 +74,7 @@ internal class ReplayPlayer
         this.ReplayCurrentRunTime = 0;
     }
 
-    public void Reset()
+    internal void Reset()
     {
         this.IsPlaying = false;
         this.IsPaused = false;
@@ -88,7 +88,7 @@ internal class ReplayPlayer
         this.Controller = null;
     }
 
-    public void SetController(CCSPlayerController c, int repeat_count = -1, [CallerMemberName] string methodName = "")
+    internal void SetController(CCSPlayerController c, int repeat_count = -1, [CallerMemberName] string methodName = "")
     {
         this.Controller = c;
         if (repeat_count != -1)
@@ -100,7 +100,7 @@ internal class ReplayPlayer
         );
     }
 
-    public void Start([CallerMemberName] string methodName = "")
+    internal void Start([CallerMemberName] string methodName = "")
     {
         if (!this.IsPlayable || !this.IsEnabled)
             return;
@@ -118,7 +118,7 @@ internal class ReplayPlayer
     });
     }
 
-    public void Stop([CallerMemberName] string methodName = "")
+    internal void Stop([CallerMemberName] string methodName = "")
     {
         this.IsPlaying = false;
 #if DEBUG
@@ -128,7 +128,7 @@ internal class ReplayPlayer
 #endif
     }
 
-    public void Pause([CallerMemberName] string methodName = "")
+    internal void Pause([CallerMemberName] string methodName = "")
     {
         if (!this.IsPlaying || !this.IsEnabled)
             return;
@@ -142,7 +142,7 @@ internal class ReplayPlayer
 #endif
     }
 
-    public void Tick()
+    internal void Tick()
     {
         if (this.MapID == -1 || !this.IsEnabled || !this.IsPlaying || !this.IsPlayable || this.Frames.Count == 0)
             return;
@@ -163,6 +163,15 @@ internal class ReplayPlayer
             {
                 this.IsReplayOutsideZone = false;
             }
+            else if (current_frame.Situation == ReplayFrameSituation.STAGE_ZONE_EXIT && this.Type == 2)
+            {
+                IsReplayOutsideZone = true;
+                ReplayCurrentRunTime = 0;
+            }
+            else if (current_frame.Situation == ReplayFrameSituation.STAGE_ZONE_ENTER && this.Type == 2)
+            {
+                IsReplayOutsideZone = false;
+            }
         }
         else
         {
@@ -173,7 +182,16 @@ internal class ReplayPlayer
             else if (current_frame.Situation == ReplayFrameSituation.END_ZONE_ENTER)
             {
                 this.IsReplayOutsideZone = true;
-                this.ReplayCurrentRunTime = this.CurrentFrameTick - (64 * 2); // (64*2) counts for the 2 seconds before run actually starts
+                this.ReplayCurrentRunTime = this.CurrentFrameTick - (Config.ReplaysPre * 2); // (64*2) counts for the 2 seconds before run actually starts
+            }
+            else if (current_frame.Situation == ReplayFrameSituation.STAGE_ZONE_EXIT && this.Type == 2)
+            {
+                this.IsReplayOutsideZone = false;
+            }
+            else if (current_frame.Situation == ReplayFrameSituation.STAGE_ZONE_ENTER && this.Type == 2)
+            {
+                IsReplayOutsideZone = true;
+                this.ReplayCurrentRunTime = this.CurrentFrameTick - (Config.ReplaysPre * 2); // (64*2) counts for the 2 seconds before run actually starts
             }
         }
         // END OF BLASPHEMY
@@ -184,7 +202,7 @@ internal class ReplayPlayer
 
         bool is_on_ground = (current_frame.Flags & (uint)PlayerFlags.FL_ONGROUND) != 0;
 
-        Vector_t velocity = (current_frame_pos - current_pos) * 64;
+        VectorT velocity = (current_frame_pos - current_pos) * 64;
 
         if (is_on_ground)
             this.Controller.PlayerPawn.Value.MoveType = MoveType_t.MOVETYPE_WALK;
@@ -194,7 +212,7 @@ internal class ReplayPlayer
         if ((current_pos - current_frame_pos).Length() > 200)
             Extensions.Teleport(Controller.PlayerPawn.Value, current_frame_pos, current_frame_ang, null);
         else
-            Extensions.Teleport(Controller.PlayerPawn.Value, null , current_frame_ang, velocity);
+            Extensions.Teleport(Controller.PlayerPawn.Value, null, current_frame_ang, velocity);
 
 
         if (!this.IsPaused)
@@ -206,32 +224,38 @@ internal class ReplayPlayer
 
         if (this.CurrentFrameTick >= this.Frames.Count)
             this.ResetReplay();
-        // if(RepeatCount != -1)    // Spam City 
-        //     Console.WriteLine($"CS2 Surf DEBUG >> internal class ReplayPlayer -> Tick -> ====================> {this.RepeatCount} <====================");
     }
 
-    public void LoadReplayData(int repeat_count = -1, [CallerMemberName] string methodName = "")
+    internal void LoadReplayData(int repeat_count = -1, [CallerMemberName] string methodName = "")
     {
         if (!this.IsPlayable || !this.IsEnabled)
             return;
 
+        string replayType = this.Type switch
+        {
+            1 => "Bonus Replay",
+            2 => "Stage Replay",
+            0 => "Map Replay",
+            _ => "Unknown Type",
+        };
+
         if (this.MapID == -1)
         {
             _logger.LogWarning("[{ClassName}] {MethodName} -> [{Type}] No replay data found for Player. MapID {MapID} | MapTimeID {MapTimeID} | RecordPlayerName {RecordPlayerName}",
-                nameof(ReplayPlayer), methodName, (this.Type == 2 ? "Stage Replay" : this.Type == 1 ? "Bonus Replay" : this.Type == 0 ? "Map Replay" : "Unknown Type"), this.MapID, this.MapTimeID, RecordPlayerName
+                nameof(ReplayPlayer), methodName, replayType, this.MapID, this.MapTimeID, RecordPlayerName
             );
             return;
         }
 
         _logger.LogTrace("[{ClassName}] {MethodName} -> [{Type}] Loaded replay data for Player '{RecordPlayerName}' | MapTime ID: {MapTimeID} | Repeat {Repeat} | Frames {TotalFrames} | Ticks {RecordTicks}",
-            nameof(ReplayPlayer), methodName, (this.Type == 2 ? "Stage Replay" : this.Type == 1 ? "Bonus Replay" : this.Type == 0 ? "Map Replay" : "Unknown Type"), this.RecordPlayerName, this.MapTimeID, repeat_count, this.Frames.Count, this.RecordRunTime
+            nameof(ReplayPlayer), methodName, replayType, this.RecordPlayerName, this.MapTimeID, repeat_count, this.Frames.Count, this.RecordRunTime
         );
 
         this.ResetReplay();
         this.RepeatCount = repeat_count;
     }
 
-    public void FormatBotName([CallerMemberName] string methodName = "")
+    internal void FormatBotName([CallerMemberName] string methodName = "")
     {
         if (!this.IsPlayable || !this.IsEnabled || this.MapID == -1)
             return;
@@ -253,15 +277,18 @@ internal class ReplayPlayer
 
         SchemaString<CBasePlayerController> bot_name = new SchemaString<CBasePlayerController>(this.Controller!, "m_iszPlayerName");
 
-        string replay_name = $"[{prefix}] {this.RecordPlayerName} | {PlayerHUD.FormatTime(this.RecordRunTime)}";
+        string replay_name = $"[{prefix}] {this.RecordPlayerName} | {PlayerHud.FormatTime(this.RecordRunTime)}";
         if (this.RecordRunTime <= 0)
             replay_name = $"[{prefix}] {this.RecordPlayerName}";
 
         bot_name.Set(replay_name);
-        Utilities.SetStateChanged(this.Controller!, "CBasePlayerController", "m_iszPlayerName");
-
+        Server.NextFrame(() =>
+            Utilities.SetStateChanged(this.Controller!, "CBasePlayerController", "m_iszPlayerName")
+        );
+#if DEBUG
         // _logger.LogTrace("[{ClassName}] {MethodName} -> Changed replay bot name from '{OldName}' to '{NewName}'",
         //     nameof(ReplayPlayer), methodName, bot_name, replay_name
         // );
+#endif
     }
 }

@@ -1,19 +1,20 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Localization;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Localization;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
-using CounterStrikeSharp.API;
 using SurfTimer.Data;
 
 namespace SurfTimer;
 
 public class Injection : IPluginServiceCollection<SurfTimer>
 {
-    private static readonly string LogDirectory = $"{Server.GameDirectory}/csgo/addons/counterstrikesharp/logs";
+    private static readonly string LogDirectory =
+        $"{Server.GameDirectory}/csgo/addons/counterstrikesharp/logs";
 
-    public void ConfigureServices(IServiceCollection services)
+    public void ConfigureServices(IServiceCollection serviceCollection)
     {
         var fileName = $"log-SurfTimer-.txt"; // Date seems to be automatically appended so we leave it out
         var filePath = Path.Combine(LogDirectory, fileName);
@@ -34,59 +35,39 @@ public class Injection : IPluginServiceCollection<SurfTimer>
         Log.Information("[SurfTimer] Logging to file: {LogFile}", filePath);
 
         // Register Serilog as a logging provider for Microsoft.Extensions.Logging
-        services.AddLogging(builder =>
+        serviceCollection.AddLogging(builder =>
         {
             builder.ClearProviders();
             builder.AddSerilog(dispose: true);
         });
 
         // Register Dependencies
-        services.AddScoped<ReplayRecorder>(); // Multiple instances for different players
-        services.AddScoped<CurrentRun>(); // Multiple instances for different players
-        services.AddScoped<ReplayPlayer>(); // Multiple instances for different players
-        services.AddScoped<PersonalBest>(); // Multiple instances for different players
-        services.AddScoped<PlayerStats>(); // Multiple instances for different players
-        services.AddScoped<PlayerProfile>(); // Multiple instances for different players
-        services.AddScoped<ApiMethod>(); // Multiple instances for different players
-        services.AddSingleton<Map>(); // Single instance for 1 Map object
+        serviceCollection.AddScoped<ReplayRecorder>(); // Multiple instances for different players
+        serviceCollection.AddScoped<CurrentRun>(); // Multiple instances for different players
+        serviceCollection.AddScoped<ReplayPlayer>(); // Multiple instances for different players
+        serviceCollection.AddScoped<PersonalBest>(); // Multiple instances for different players
+        serviceCollection.AddScoped<PlayerStats>(); // Multiple instances for different players
+        serviceCollection.AddScoped<PlayerProfile>(); // Multiple instances for different players
+        serviceCollection.AddScoped<ApiMethod>(); // Multiple instances for different players
+        serviceCollection.AddSingleton<Map>(); // Single instance for 1 Map object
 
-        services.AddScoped<IDataAccessService>(provider =>
-            Config.API.GetApiOnly()
-                ? new ApiDataAccessService()
-                : new MySqlDataAccessService()
+        serviceCollection.AddScoped<IDataAccessService>(provider =>
+            Config.Api.GetApiOnly() ? new ApiDataAccessService() : new MySqlDataAccessService()
         );
     }
 }
 
-public class LocalizationService
+/// <summary>
+/// Handles translation files
+/// </summary>
+public static class LocalizationService
 {
     // Localizer as a Singleton
     public static IStringLocalizer? Localizer { get; private set; }
-    public static IStringLocalizer LocalizerNonNull
-        => Localizer!;
+    public static IStringLocalizer LocalizerNonNull => Localizer!;
+
     public static void Init(IStringLocalizer localizer)
     {
         Localizer = localizer;
     }
 }
-
-/*
-public class Injection : IPluginServiceCollection<SurfTimer>
-{
-    public void ConfigureServices(IServiceCollection serviceCollection)
-    {
-        // Register Logging
-        serviceCollection.AddLogging(builder =>
-        {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Debug);
-        });
-
-
-        // Register Dependencies
-        serviceCollection.AddScoped<ReplayRecorder>(); // Multiple instances for different players
-        serviceCollection.AddScoped<CurrentRun>(); // Multiple instances for different players
-        serviceCollection.AddSingleton<Map>();  // Single instance for 1 Map object
-    }
-}
-*/

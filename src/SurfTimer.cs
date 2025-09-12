@@ -1,11 +1,19 @@
 ﻿/*
-                      ___  _____  _________  ___ 
-                     ___  /  _/ |/ / __/ _ \/ _ |
-                    ___  _/ //    / _// , _/ __ |
-                   ___  /___/_/|_/_/ /_/|_/_/ |_|
+                   ___   _____   ____________  ___
+                  ___   /  _/ | / / ____/ __ \/   |
+                 ___    / //  |/ / /_  / /_/ / /| |
+                ___   _/ // /|  / __/ / _, _/ ___ |
+               ___   /___/_/ |_/_/   /_/ |_/_/  |_|
+
+             ___   ___________ __    ___   _____ __  ______
+            ___   /_  __/ ___// /   /   | / ___// / / / __ \
+           ___     / /  \__ \/ /   / /| | \__ \/ /_/ / / / /
+          ___     / /  ___/ / /___/ ___ |___/ / __  / /_/ /
+         ___     /_/  /____/_____/_/  |_/____/_/ /_/_____/
 
     Official Timer plugin for the CS2 Surf Initiative.
     Copyright (C) 2024  Liam C. (Infra)
+    Copyright (C) 2025  tslashd
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -25,26 +33,33 @@
 
 #define DEBUG
 
+using System.Collections.Concurrent;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SurfTimer.Data;
+using SurfTimer.Shared.Data;
+using SurfTimer.Shared.Data.MySql;
 
 namespace SurfTimer;
 
 // Gameplan: https://github.com/CS2Surf/Timer/tree/dev/README.md
-[MinimumApiVersion(318)]
+[MinimumApiVersion(337)]
 public partial class SurfTimer : BasePlugin
 {
     private readonly ILogger<SurfTimer> _logger;
     public static IServiceProvider ServiceProvider { get; private set; } = null!;
+    private readonly IDataAccessService? _dataService;
 
     // Inject ILogger and store IServiceProvider globally
     public SurfTimer(ILogger<SurfTimer> logger, IServiceProvider serviceProvider)
     {
         _logger = logger;
         ServiceProvider = serviceProvider;
+        _dataService = ServiceProvider.GetRequiredService<IDataAccessService>();
     }
 
     // Metadata
@@ -54,33 +69,50 @@ public partial class SurfTimer : BasePlugin
     public override string ModuleAuthor => "The CS2 Surf Initiative - github.com/cs2surf";
 
     // Globals
-    private Dictionary<int, Player> playerList = new Dictionary<int, Player>(); // This can probably be done way better, revisit
-    internal static TimerDatabase DB = new TimerDatabase(Config.MySQL.GetConnectionString()); // Initiate it with the correct connection string
-    // internal Map CurrentMap = null!;
-    internal static Map CurrentMap = null!;
+    private readonly ConcurrentDictionary<int, Player> playerList = new();
+    internal static IDatabaseService DB { get; private set; } = null!;
+    public static Map CurrentMap { get; private set; } = null!;
 
     /* ========== MAP START HOOKS ========== */
     public void OnMapStart(string mapName)
     {
         // Initialise Map Object
-        if ((CurrentMap == null || !CurrentMap.Name.Equals(mapName)) && mapName.Contains("surf_"))
+        if ((CurrentMap == null || CurrentMap.Name!.Equals(mapName)) && mapName.Contains("surf_"))
         {
-            Server.NextWorldUpdate(() => Console.WriteLine(String.Format("  ____________    ____         ___\n"
-                                    + " / ___/ __/_  |  / __/_ ______/ _/\n"
-                                    + "/ /___\\ \\/ __/  _\\ \\/ // / __/ _/ \n"
-                                    + "\\___/___/____/ /___/\\_,_/_/ /_/\n"
-                                    + $"[{Config.PluginName}] v.{ModuleVersion} - loading map {mapName}.\n"
-                                    + $"[{Config.PluginName}] This software is licensed under the GNU Affero General Public License v3.0. See LICENSE for more information.\n"
-                                    + $"[{Config.PluginName}] ---> Source Code: https://github.com/CS2Surf/Timer\n"
-                                    + $"[{Config.PluginName}] ---> License Agreement: https://github.com/CS2Surf/Timer/blob/main/LICENSE\n"
-            )));
+            _logger.LogInformation(
+                "[{Prefix}] New map {MapName} started. Initializing Map object.....",
+                Config.PluginName,
+                mapName
+            );
 
-            Server.NextWorldUpdate(async () => CurrentMap = await Map.CreateAsync(mapName)); // NextWorldUpdate runs even during server hibernation
+            Server.NextWorldUpdateAsync(async () => // NextWorldUpdate runs even during server hibernation
+            {
+                _logger.LogInformation(
+                    "{PluginLogo}\n"
+                        + "[CS2 Surf] {PluginName} v.{ModuleVersion} - loading map {MapName}.\n"
+                        + "[CS2 Surf] This software is licensed under the GNU Affero General Public License v3.0. See LICENSE for more information.\n"
+                        + "[CS2 Surf] ---> Source Code: https://github.com/CS2Surf/Timer\n"
+                        + "[CS2 Surf] ---> License Agreement: https://github.com/CS2Surf/Timer/blob/main/LICENSE\n",
+                    Config.PluginLogo,
+                    Config.PluginName,
+                    ModuleVersion,
+                    mapName
+                );
+
+                CurrentMap = new Map(mapName);
+                await CurrentMap.InitializeAsync();
+            });
         }
     }
 
     public void OnMapEnd()
     {
+        _logger.LogInformation(
+            "[{Prefix}] Map ({MapName}) ended. Cleaning up resources...",
+            Config.PluginName,
+            CurrentMap.Name
+        );
+
         // Clear/reset stuff here
         CurrentMap = null!;
         playerList.Clear();
@@ -97,7 +129,8 @@ public partial class SurfTimer : BasePlugin
         ConVarHelper.RemoveCheatFlagFromConVar("bot_zombie");
 
         Server.ExecuteCommand("execifexists SurfTimer/server_settings.cfg");
-        _logger.LogTrace("[{Prefix}] Executed configuration: server_settings.cfg",
+        _logger.LogTrace(
+            "[{Prefix}] Executed configuration: server_settings.cfg",
             Config.PluginName
         );
         return HookResult.Continue;
@@ -108,31 +141,61 @@ public partial class SurfTimer : BasePlugin
     {
         LocalizationService.Init(Localizer);
 
-        // Check if we have connected to the Database
-        if (DB != null)
+        // === Dapper bootstrap (snake_case mapping + type handlers) + DB init ===
+        DapperBootstrapper.Init();
+        var connString = Config.MySql.GetConnectionString();
+        var factory = new MySqlConnectionStringFactory(connString);
+        DB = new DapperDatabaseService(factory);
+
+        bool accessService = false;
+
+        try
         {
-            _logger.LogInformation("[{Prefix}] Database connection established.",
+            accessService = Task.Run(() => _dataService!.PingAccessService())
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "[{Prefix}] PingAccessService threw an exception.",
                 Config.PluginName
+            );
+        }
+
+        if (accessService)
+        {
+            _logger.LogInformation(
+                "[{Prefix}] {AccessService} connection established.",
+                Config.PluginName,
+                Config.Api.GetApiOnly() ? "API" : "DB"
             );
         }
         else
         {
-            _logger.LogCritical("[{Prefix}] Error connecting to the database.",
-                Config.PluginName
+            _logger.LogCritical(
+                "[{Prefix}] Error connecting to the {AccessService}.",
+                Config.PluginName,
+                Config.Api.GetApiOnly() ? "API" : "DB"
             );
-            // To-do: Abort plugin loading
+
+            Exception exception = new(
+                $"[{Config.PluginName}] Error connecting to the {(Config.Api.GetApiOnly() ? "API" : "DB")}"
+            );
+            throw exception;
         }
 
-        _logger.LogInformation("""  
-        
-            ____________    ____         ___
-            / ___/ __/_  |  / __/_ ______/ _/
-            / /___\ \/ __/  _\ \/ // / __/ _/ 
-            \___/___/____/ /___/\_,_/_/ /_/   
-            [CS2 Surf] {PluginName} plugin loaded. Version: {ModuleVersion}
-            [CS2 Surf] This plugin is licensed under the GNU Affero General Public License v3.0. See LICENSE for more information. 
-            Source code: https://github.com/CS2Surf/Timer
-        """, Config.PluginName, ModuleVersion
+        _logger.LogInformation(
+            """  
+                {PluginLogo}  
+                [CS2 Surf] {PluginName} plugin loaded. Version: {ModuleVersion}
+                [CS2 Surf] This plugin is licensed under the GNU Affero General Public License v3.0. See LICENSE for more information. 
+                Source code: https://github.com/CS2Surf/Timer
+            """,
+            Config.PluginLogo,
+            Config.PluginName,
+            ModuleVersion
         );
 
         // Map Start Hook
@@ -141,7 +204,6 @@ public partial class SurfTimer : BasePlugin
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         // Tick listener
         RegisterListener<Listeners.OnTick>(OnTick);
-
 
         HookEntityOutput("trigger_multiple", "OnStartTouch", OnTriggerStartTouch);
         HookEntityOutput("trigger_multiple", "OnEndTouch", OnTriggerEndTouch);

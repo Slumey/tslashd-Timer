@@ -3,6 +3,7 @@ using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.Modules.Admin;
 
 namespace SurfTimer;
 
@@ -14,10 +15,20 @@ public partial class SurfTimer
     {
         if (player == null)
             return;
+
         if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
         {
-            player.ChangeTeam(CsTeam.CounterTerrorist);
-            player.Respawn();
+            Server.NextFrame(() =>  // Weird CS2 bug that requires doing this twice to show the Joined X team in chat and not stay in limbo
+                {
+                    player.ChangeTeam(CsTeam.CounterTerrorist);
+                    player.Respawn();
+
+                    player.ChangeTeam(CsTeam.Spectator);
+
+                    player.ChangeTeam(CsTeam.CounterTerrorist);
+                    player.Respawn();
+                }
+            );
         }
 
         Player oPlayer = playerList[player.UserId ?? 0];
@@ -27,23 +38,35 @@ public partial class SurfTimer
             return;
         }
 
-        // oPlayer.ReplayRecorder.Reset();
-        // To-do: players[userid].Timer.Reset() -> teleport player
         playerList[player.UserId ?? 0].Timer.Reset();
         if (!CurrentMap.StartZone.IsZero())
-            Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!,CurrentMap.StartZone));
+            Server.NextFrame(() =>
+            {
+                Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.StartZone);
+            }
+        );
     }
 
-    [ConsoleCommand("css_rs", "Reset back to the start of the stage or bonus you're in.")]
+    [ConsoleCommand("css_rs", "Reset back to the start of the stage or bonus you were in.")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void PlayerResetStage(CCSPlayerController? player, CommandInfo command)
     {
-       if (player == null)
+        if (player == null)
             return;
+
         if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
         {
-            player.ChangeTeam(CsTeam.CounterTerrorist);
-            player.Respawn();
+            Server.NextFrame(() =>  // Weird CS2 bug that requires doing this twice to show the Joined X team in chat and not stay in limbo
+                {
+                    player.ChangeTeam(CsTeam.CounterTerrorist);
+                    player.Respawn();
+
+                    player.ChangeTeam(CsTeam.Spectator);
+
+                    player.ChangeTeam(CsTeam.CounterTerrorist);
+                    player.Respawn();
+                }
+            );
         }
 
         Player oPlayer = playerList[player.UserId ?? 0];
@@ -57,37 +80,31 @@ public partial class SurfTimer
         if (oPlayer.Timer.IsBonusMode)
         {
             if (oPlayer.Timer.Bonus != 0 && !CurrentMap.BonusStartZone[oPlayer.Timer.Bonus].IsZero())
-                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value! , CurrentMap.BonusStartZone[oPlayer.Timer.Bonus]));
+                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.BonusStartZone[oPlayer.Timer.Bonus]));
             else // Reset back to map start
-                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!,CurrentMap.StartZone));
+                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.StartZone));
         }
-
         else
         {
             if (oPlayer.Timer.Stage != 0 && !CurrentMap.StageStartZone[oPlayer.Timer.Stage].IsZero())
                 Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.StageStartZone[oPlayer.Timer.Stage]));
             else // Reset back to map start
-                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!,CurrentMap.StartZone));
+                Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.StartZone));
         }
     }
 
     [ConsoleCommand("css_s", "Teleport to a stage")]
     [ConsoleCommand("css_stage", "Teleport to a stage")]
-    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    [CommandHelper(minArgs: 1, usage: "<Stage Number> [1/2/3]", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void PlayerGoToStage(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
             return;
-        if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
-        {
-            player.ChangeTeam(CsTeam.CounterTerrorist);
-            player.Respawn();
-        }
 
-        int stage;
+        short stage;
         try
         {
-            stage = Int32.Parse(command.ArgByIndex(1));
+            stage = short.Parse(command.ArgByIndex(1));
         }
         catch (System.Exception)
         {
@@ -97,25 +114,11 @@ public partial class SurfTimer
             return;
         }
 
-        // Must be 1 argument
-        if (command.ArgCount < 2 || stage <= 0)
-        {
-#if DEBUG
-            player.PrintToChat($"CS2 Surf DEBUG >> css_stage >> Arg#: {command.ArgCount} >> Args: {Int32.Parse(command.ArgByIndex(1))}");
-#endif
-
-            player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_usage",
-                "!s <stage>"]}"
-            );
-            return;
-        }
-
-        else if (CurrentMap.Stages <= 0)
+        if (CurrentMap.Stages <= 0)
         {
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["not_staged"]}");
             return;
         }
-
         else if (stage > CurrentMap.Stages)
         {
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_stage_value",
@@ -127,6 +130,21 @@ public partial class SurfTimer
         if (!CurrentMap.StageStartZone[stage].IsZero())
         {
             playerList[player.UserId ?? 0].Timer.Reset();
+
+            if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
+            {
+                Server.NextFrame(() =>  // Weird CS2 bug that requires doing this twice to show the Joined X team in chat and not stay in limbo
+                    {
+                        player.ChangeTeam(CsTeam.CounterTerrorist);
+                        player.Respawn();
+
+                        player.ChangeTeam(CsTeam.Spectator);
+
+                        player.ChangeTeam(CsTeam.CounterTerrorist);
+                        player.Respawn();
+                    }
+                );
+            }
 
             if (stage == 1)
             {
@@ -142,7 +160,6 @@ public partial class SurfTimer
             // To-do: If you run this while you're in the start zone, endtouch for the start zone runs after you've teleported
             //        causing the timer to start. This needs to be fixed.
         }
-
         else
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_usage",
                 "!s <stage>"]}"
@@ -151,42 +168,31 @@ public partial class SurfTimer
 
     [ConsoleCommand("css_b", "Teleport to a bonus")]
     [ConsoleCommand("css_bonus", "Teleport to a bonus")]
-    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    [CommandHelper(minArgs: 1, usage: "<Bonus Number> [1/2/3]", whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void PlayerGoToBonus(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
             return;
-        if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
-        {
-            player.ChangeTeam(CsTeam.CounterTerrorist);
-            player.Respawn();
-        }
 
         int bonus;
 
-        // Check for argument count
-        if (command.ArgCount < 2)
+        try
         {
-            if (CurrentMap.Bonuses > 0)
-                bonus = 1;
-            else
-            {
-                player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_usage",
-                    "!b <bonus>"]}"
-                );
-                return;
-            }
-        }
-
-        else
             bonus = Int32.Parse(command.ArgByIndex(1));
+        }
+        catch (System.Exception)
+        {
+            player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_usage",
+                "!b <bonus>"]}"
+            );
+            return;
+        }
 
         if (CurrentMap.Bonuses <= 0)
         {
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["not_bonused"]}");
             return;
         }
-
         else if (bonus > CurrentMap.Bonuses)
         {
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_bonus_value",
@@ -200,9 +206,23 @@ public partial class SurfTimer
             playerList[player.UserId ?? 0].Timer.Reset();
             playerList[player.UserId ?? 0].Timer.IsBonusMode = true;
 
+            if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
+            {
+                Server.NextFrame(() =>  // Weird CS2 bug that requires doing this twice to show the Joined X team in chat and not stay in limbo
+                    {
+                        player.ChangeTeam(CsTeam.CounterTerrorist);
+                        player.Respawn();
+
+                        player.ChangeTeam(CsTeam.Spectator);
+
+                        player.ChangeTeam(CsTeam.CounterTerrorist);
+                        player.Respawn();
+                    }
+                );
+            }
+
             Server.NextFrame(() => Extensions.Teleport(player.PlayerPawn.Value!, CurrentMap.BonusStartZone[bonus]));
         }
-
         else
             player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["invalid_usage",
                 "!b <bonus>"]}"
@@ -210,12 +230,15 @@ public partial class SurfTimer
     }
 
     [ConsoleCommand("css_spec", "Moves a player automaticlly into spectator mode")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void MovePlayerToSpectator(CCSPlayerController? player, CommandInfo command)
     {
-        if (player == null || player.Team == CsTeam.Spectator)
+        if (player == null)
             return;
 
-        player.ChangeTeam(CsTeam.Spectator);
+        Server.NextFrame(() =>
+            player.ChangeTeam(CsTeam.Spectator)
+        );
     }
 
     [ConsoleCommand("css_rank", "Show the current rank of the player for the style they are in")]
@@ -226,9 +249,9 @@ public partial class SurfTimer
             return;
 
         int pRank = playerList[player.UserId ?? 0].Stats.PB[playerList[player.UserId ?? 0].Timer.Style].Rank;
-        int tRank = playerList[player.UserId ?? 0].CurrMap.MapCompletions[playerList[player.UserId ?? 0].Timer.Style];
+        int tRank = CurrentMap.MapCompletions[playerList[player.UserId ?? 0].Timer.Style];
         player.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["rank",
-            CurrentMap.Name, pRank, tRank]}"
+            CurrentMap.Name!, pRank, tRank]}"
         );
     }
 
@@ -240,6 +263,7 @@ public partial class SurfTimer
     */
     [ConsoleCommand("css_replaybotpause", "Pause the replay bot playback")]
     [ConsoleCommand("css_rbpause", "Pause the replay bot playback")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void PauseReplay(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null || player.Team != CsTeam.Spectator)
@@ -255,6 +279,7 @@ public partial class SurfTimer
     }
 
     [ConsoleCommand("css_rbplay", "Start all replays from the start")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void PlayReplay(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null || player.Team != CsTeam.Spectator)
@@ -278,6 +303,7 @@ public partial class SurfTimer
 
     [ConsoleCommand("css_replaybotflip", "Flips the replay bot between Forward/Backward playback")]
     [ConsoleCommand("css_rbflip", "Flips the replay bot between Forward/Backward playback")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void ReverseReplay(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null || player.Team != CsTeam.Spectator)
@@ -339,6 +365,7 @@ public partial class SurfTimer
     ########################
     */
     [ConsoleCommand("css_saveloc", "Save current player location to be practiced")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void SavePlayerLocation(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
@@ -362,9 +389,9 @@ public partial class SurfTimer
 
         p.SavedLocations.Add(new SavelocFrame
         {
-            Pos = new Vector_t(player_pos.X, player_pos.Y, player_pos.Z),
-            Ang = new QAngle_t(player_angle.X, player_angle.Y, player_angle.Z),
-            Vel = new Vector_t(player_velocity.X, player_velocity.Y, player_velocity.Z),
+            Pos = new VectorT(player_pos.X, player_pos.Y, player_pos.Z),
+            Ang = new QAngleT(player_angle.X, player_angle.Y, player_angle.Z),
+            Vel = new VectorT(player_velocity.X, player_velocity.Y, player_velocity.Z),
             Tick = p.Timer.Ticks
         });
         p.CurrentSavedLocation = p.SavedLocations.Count - 1;
@@ -375,6 +402,7 @@ public partial class SurfTimer
     }
 
     [ConsoleCommand("css_tele", "Teleport player to current saved location")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void TeleportPlayerLocation(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
@@ -403,6 +431,7 @@ public partial class SurfTimer
         }
 
         if (command.ArgCount > 1)
+        {
             try
             {
                 int tele_n = int.Parse(command.ArgByIndex(1));
@@ -414,12 +443,14 @@ public partial class SurfTimer
                 Exception exception = new("sum ting wong");
                 throw exception;
             }
+        }
         SavelocFrame location = p.SavedLocations[p.CurrentSavedLocation];
         Server.NextFrame(() =>
-        {
-            Extensions.Teleport(p.Controller.PlayerPawn.Value!, location.Pos, location.Ang, location.Vel);
-            p.Timer.Ticks = location.Tick;
-        });
+            {
+                Extensions.Teleport(p.Controller.PlayerPawn.Value!, location.Pos, location.Ang, location.Vel);
+                p.Timer.Ticks = location.Tick;
+            }
+        );
 
         p.Controller.PrintToChat($"{Config.PluginPrefix} {LocalizationService.LocalizerNonNull["saveloc_teleported",
             p.CurrentSavedLocation]}"
@@ -427,6 +458,7 @@ public partial class SurfTimer
     }
 
     [ConsoleCommand("css_teleprev", "Teleport player to previous saved location")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void TeleportPlayerLocationPrev(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
@@ -462,6 +494,7 @@ public partial class SurfTimer
     }
 
     [ConsoleCommand("css_telenext", "Teleport player to next saved location")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
     public void TeleportPlayerLocationNext(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
@@ -506,78 +539,20 @@ public partial class SurfTimer
     */
     [ConsoleCommand("css_rx", "x")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    [RequiresPermissions("@css/root")]
     public void TestSituationCmd(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
             return;
 
         Player oPlayer = playerList[player.UserId ?? 0];
-        int style = oPlayer.Timer.Style;
 
-        oPlayer.Stats.ThisRun.PrintSituations(oPlayer);
-    }
-
-    [ConsoleCommand("css_setpb", "xxxxx")]
-    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
-    public async void TestSetPb(CCSPlayerController? player, CommandInfo command)
-    {
-        if (player == null)
-            return;
-
-        Player oPlayer = playerList[player.UserId ?? 0];
-        int style = oPlayer.Timer.Style;
-
-        await oPlayer.Stats.ThisRun.SaveMapTime(oPlayer, 0, 0, 6666, "TestSetPb");
-        // oPlayer.Stats.ThisRun.PrintSituations(oPlayer);
-
-        /* Test Time Saving *//*
-        if (methodName == "TestSetPb")
-        {
-            // 1. Dummy Checkpoint
-            var dummyCheckpoint = new Checkpoint
-            {
-                CP = 1,
-                Ticks = 1234,
-                EndTouch = 1,
-                StartVelX = 111.1f,
-                StartVelY = 222.2f,
-                StartVelZ = 333.3f,
-                EndVelX = 444.4f,
-                EndVelY = 555.5f,
-                EndVelZ = 666.6f,
-                Attempts = 2
-            };
-
-            // 2. Dummy Dictionary за mapTime.Checkpoints
-            var dummyCheckpointsDict = new Dictionary<int, Checkpoint>
-            {
-                { dummyCheckpoint.CP, dummyCheckpoint }
-            };
-
-            mapTime = new MapTimeDataModel
-            {
-                PlayerId = player.Profile.ID,
-                MapId = player.CurrMap.ID,
-                Style = player.Timer.Style,
-                Type = 0,
-                Stage = stage != 0 ? stage : bonus,
-                Ticks = 666,
-                StartVelX = this.StartVelX,
-                StartVelY = this.StartVelY,
-                StartVelZ = this.StartVelZ,
-                EndVelX = this.EndVelX,
-                EndVelY = this.EndVelY,
-                EndVelZ = this.EndVelZ,
-                ReplayFramesBase64 = replay_frames,
-                Checkpoints = dummyCheckpointsDict
-            };
-        }
-        /* END Test Time Saving */
-
+        CurrentRun.PrintSituations(oPlayer);
     }
 
     [ConsoleCommand("css_testx", "x")]
     [CommandHelper(whoCanExecute: CommandUsage.CLIENT_ONLY)]
+    [RequiresPermissions("@css/root")]
     public void TestCmd(CCSPlayerController? player, CommandInfo command)
     {
         if (player == null)
@@ -586,19 +561,17 @@ public partial class SurfTimer
         Player oPlayer = playerList[player.UserId ?? 0];
         int style = oPlayer.Timer.Style;
 
-        // player.PrintToChat($"{Config.PluginPrefix} {ChatColors.Red}Testing 'PB_LoadMapTimeData'");
         player.PrintToChat($"{Config.PluginPrefix}{ChatColors.Lime}====== PLAYER ======");
         player.PrintToChat($"{Config.PluginPrefix} Profile ID: {ChatColors.Green}{oPlayer.Profile.ID}");
         player.PrintToChat($"{Config.PluginPrefix} Steam ID: {ChatColors.Green}{oPlayer.Profile.SteamID}");
-        player.PrintToChat($"{Config.PluginPrefix} MapTime ID: {ChatColors.Green}{oPlayer.Stats.PB[style].ID} - {PlayerHUD.FormatTime(oPlayer.Stats.PB[style].Ticks)}");
+        player.PrintToChat($"{Config.PluginPrefix} MapTime ID: {ChatColors.Green}{oPlayer.Stats.PB[style].ID} - {PlayerHud.FormatTime(oPlayer.Stats.PB[style].RunTime)}");
         player.PrintToChat($"{Config.PluginPrefix} Stage: {ChatColors.Green}{oPlayer.Timer.Stage}");
         player.PrintToChat($"{Config.PluginPrefix} IsStageMode: {ChatColors.Green}{oPlayer.Timer.IsStageMode}");
         player.PrintToChat($"{Config.PluginPrefix} IsRunning: {ChatColors.Green}{oPlayer.Timer.IsRunning}");
         player.PrintToChat($"{Config.PluginPrefix} Checkpoint: {ChatColors.Green}{oPlayer.Timer.Checkpoint}");
         player.PrintToChat($"{Config.PluginPrefix} Bonus: {ChatColors.Green}{oPlayer.Timer.Bonus}");
         player.PrintToChat($"{Config.PluginPrefix} Ticks: {ChatColors.Green}{oPlayer.Timer.Ticks}");
-        player.PrintToChat($"{Config.PluginPrefix} StagePB ID: {ChatColors.Green}{oPlayer.Stats.StagePB[1][style].ID} - {PlayerHUD.FormatTime(oPlayer.Stats.StagePB[1][style].Ticks)}");
-        // player.PrintToChat($"{Config.PluginPrefix} StagePB ID: {ChatColors.Green}{oPlayer.Stats.StagePB[style][1].ID} - {PlayerHUD.FormatTime(oPlayer.Stats.StagePB[style][1].Ticks)}");
+        player.PrintToChat($"{Config.PluginPrefix} StagePB ID: {ChatColors.Green}{oPlayer.Stats.StagePB[1][style].ID} - {PlayerHud.FormatTime(oPlayer.Stats.StagePB[1][style].RunTime)}");
 
 
         player.PrintToChat($"{Config.PluginPrefix}{ChatColors.Orange}====== MAP ======");
@@ -607,8 +580,8 @@ public partial class SurfTimer
         player.PrintToChat($"{Config.PluginPrefix} Map Stages: {ChatColors.Green}{CurrentMap.Stages}");
         player.PrintToChat($"{Config.PluginPrefix} Map Bonuses: {ChatColors.Green}{CurrentMap.Bonuses}");
         player.PrintToChat($"{Config.PluginPrefix} Map Completions (Style: {ChatColors.Green}{style}{ChatColors.Default}): {ChatColors.Green}{CurrentMap.MapCompletions[style]}");
-        player.PrintToChat($"{Config.PluginPrefix} .CurrentMap.WR[].Ticks: {ChatColors.Green}{CurrentMap.WR[style].Ticks}");
-        player.PrintToChat($"{Config.PluginPrefix} .CurrentMap.WR[].Checkpoints.Count: {ChatColors.Green}{CurrentMap.WR[style].Checkpoints.Count}");
+        player.PrintToChat($"{Config.PluginPrefix} CurrentMap.WR[{style}].Ticks: {ChatColors.Green}{CurrentMap.WR[style].RunTime}");
+        player.PrintToChat($"{Config.PluginPrefix} CurrentMap.WR[{style}].Checkpoints.Count: {ChatColors.Green}{CurrentMap.WR[style].Checkpoints!.Count}");
 
 
         player.PrintToChat($"{Config.PluginPrefix}{ChatColors.Purple}====== REPLAYS ======");
@@ -625,90 +598,54 @@ public partial class SurfTimer
         player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.BonusWR.Frames.Count: {ChatColors.Green}{CurrentMap.ReplayManager.BonusWR?.Frames.Count}");
         player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.BonusWR.IsPlayable: {ChatColors.Green}{CurrentMap.ReplayManager.BonusWR?.IsPlayable}");
         player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.BonusWR.IsPlaying: {ChatColors.Green}{CurrentMap.ReplayManager.BonusWR?.IsPlaying}");
-
-        /*
-                for (int i = 1; i < SurfTimer.CurrentMap.Stages; i++)
-                {
-                    player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.AllStageWR[{i}][0].RecordRunTime: {ChatColors.Green}{CurrentMap.ReplayManager.AllStageWR[i][0].RecordRunTime}");
-                    player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.AllStageWR[{i}][0].Frames.Count: {ChatColors.Green}{CurrentMap.ReplayManager.AllStageWR[i][0].Frames.Count}");
-                    player.PrintToChat($"{Config.PluginPrefix} .ReplayManager.AllStageWR[{i}][0].IsPlayable: {ChatColors.Green}{CurrentMap.ReplayManager.AllStageWR[i][0].IsPlayable}");
-                }
-        */
-
-        /*
-                for (int i = 0; i < CurrentMap.ReplayManager.MapWR.Frames.Count; i++)
-                {
-                    ReplayFrame x = CurrentMap.ReplayManager.MapWR.Frames[i];
-
-                    switch (x.Situation)
-                    {
-                        case ReplayFrameSituation.START_ZONE_ENTER:
-                            player.PrintToChat($"Start Enter: {i} | Situation {x.Situation}");
-                            break;
-                        case ReplayFrameSituation.START_ZONE_EXIT:
-                            player.PrintToChat($"Start Exit: {i} | Situation {x.Situation}");
-                            break;
-                        case ReplayFrameSituation.STAGE_ZONE_ENTER:
-                            player.PrintToChat($"Stage Enter: {i} | Situation {x.Situation}");
-                            break;
-                        case ReplayFrameSituation.STAGE_ZONE_EXIT:
-                            player.PrintToChat($"Stage Exit: {i} | Situation {x.Situation}");
-                            break;
-                        case ReplayFrameSituation.CHECKPOINT_ZONE_ENTER:
-                            player.PrintToChat($"Checkpoint Enter: {i} | Situation {x.Situation}");
-                            break;
-                        case ReplayFrameSituation.CHECKPOINT_ZONE_EXIT:
-                            player.PrintToChat($"Checkpoint Exit: {i} | Situation {x.Situation}");
-                            break;
-                    }
-                }
-        */
-        // for (int i = 0; i < CurrentMap.ReplayManager.MapWR.MapSituations.Count; i++)
-        // {
-        //     ReplayFrame x = CurrentMap.ReplayManager.MapWR.Frames[i];
-        //     switch (x.Situation)
-        //     {
-        //         case ReplayFrameSituation.START_ZONE_ENTER:
-        //             player.PrintToChat($"START_ZONE_ENTER: {i} | Situation {x.Situation}");
-        //             break;
-        //         case ReplayFrameSituation.START_ZONE_EXIT:
-        //             player.PrintToChat($"START_ZONE_EXIT: {i} | Situation {x.Situation}");
-        //             break;
-        //         case ReplayFrameSituation.STAGE_ZONE_ENTER:
-        //             player.PrintToChat($"STAGE_ZONE_ENTER: {i} | Situation {x.Situation}");
-        //             break;
-        //         case ReplayFrameSituation.STAGE_ZONE_EXIT:
-        //             player.PrintToChat($"STAGE_ZONE_EXIT: {i} | Situation {x.Situation}");
-        //             break;
-        //         case ReplayFrameSituation.CHECKPOINT_ZONE_ENTER:
-        //             player.PrintToChat($"CHECKPOINT_ZONE_ENTER: {i} | Situation {x.Situation}");
-        //             break;
-        //         case ReplayFrameSituation.CHECKPOINT_ZONE_EXIT:
-        //             player.PrintToChat($"CHECKPOINT_ZONE_EXIT: {i} | Situation {x.Situation}");
-        //             break;
-        //     }
-        // }
-
-        // player.PrintToChat($"{Config.PluginPrefix} IsPlayable: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.IsPlayable}");
-        // player.PrintToChat($"{Config.PluginPrefix} IsPlaying: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.IsPlaying}");
-        // player.PrintToChat($"{Config.PluginPrefix} Player.IsSpectating: {ChatColors.Green}{oPlayer.IsSpectating(CurrentMap.ReplayManager.MapWR.Controller!)}");
-        // player.PrintToChat($"{Config.PluginPrefix} Name & MapTimeID: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.RecordPlayerName} {CurrentMap.ReplayManager.MapWR.MapTimeID}");
-        // player.PrintToChat($"{Config.PluginPrefix} ReplayCurrentRunTime: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.ReplayCurrentRunTime}");
-        // player.PrintToChat($"{Config.PluginPrefix} RepeatCount: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.RepeatCount}");
-        // player.PrintToChat($"{Config.PluginPrefix} IsReplayOutsideZone: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.IsReplayOutsideZone}");
-        // player.PrintToChat($"{Config.PluginPrefix} CurrentFrameTick: {ChatColors.Green}{CurrentMap.ReplayManager.MapWR.CurrentFrameTick}");
-        // player.PrintToChat($"{Config.PluginPrefix} ReplayRecorder.Frames.Length: {ChatColors.Green}{oPlayer.ReplayRecorder.Frames.Count}");
-
-        // if (CurrentMap.ReplayManager.StageWR != null)
-        // {
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.MapTimeID - Stage: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.MapTimeID} - {CurrentMap.ReplayManager.StageWR.Stage}");
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.IsPlayable: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.IsPlayable}");
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.IsEnabled: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.IsEnabled}");
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.IsPaused: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.IsPaused}");
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.IsPlaying: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.IsPlaying}");
-        //     player.PrintToChat($"{Config.PluginPrefix} ReplayManager.StageWR.Controller Null?: {ChatColors.Green}{CurrentMap.ReplayManager.StageWR.Controller == null}");
-        // }
     }
 
+    [ConsoleCommand("css_ctest", "x")]
+    [CommandHelper(whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
+    [RequiresPermissions("@css/root")]
+    public void ConsoleTestCmd(CCSPlayerController? player, CommandInfo command)
+    {
+        Console.WriteLine("====== MAP INFO ======");
+        Console.WriteLine($"Map ID: {CurrentMap.ID}");
+        Console.WriteLine($"Map Name: {CurrentMap.Name}");
+        Console.WriteLine($"Map Author: {CurrentMap.Author}");
+        Console.WriteLine($"Map Tier: {CurrentMap.Tier}");
+        Console.WriteLine($"Map Stages: {CurrentMap.Stages}");
+        Console.WriteLine($"Map Bonuses: {CurrentMap.Bonuses}");
+        Console.WriteLine($"Map Completions: {CurrentMap.MapCompletions[0]}");
 
+        Console.WriteLine("====== MAP WR INFO ======");
+        Console.WriteLine($"Map WR ID: {CurrentMap.WR[0].ID}");
+        Console.WriteLine($"Map WR Name: {CurrentMap.WR[0].Name}");
+        Console.WriteLine($"Map WR Type: {CurrentMap.WR[0].Type}");
+        Console.WriteLine($"Map WR Rank: {CurrentMap.WR[0].Rank}");
+        Console.WriteLine($"Map WR Checkpoints.Count: {CurrentMap.WR[0].Checkpoints?.Count}");
+        Console.WriteLine($"Map WR ReplayFramesBase64.Length: {CurrentMap.WR[0].ReplayFrames?.ToString().Length}");
+        Console.WriteLine($"Map WR ReplayFrames.Length: {CurrentMap.WR[0].ReplayFrames?.ToString().Length}");
+
+        Console.WriteLine("====== MAP StageWR INFO ======");
+        Console.WriteLine($"Map Stage Completions ({CurrentMap.Stages} + 1): {CurrentMap.StageCompletions.Length}");
+        Console.WriteLine($"Map StageWR ID: {CurrentMap.StageWR[1][0].ID}");
+        Console.WriteLine($"Map StageWR Name: {CurrentMap.StageWR[1][0].Name}");
+        Console.WriteLine($"Map StageWR Type: {CurrentMap.StageWR[1][0].Type}");
+        Console.WriteLine($"Map StageWR Rank: {CurrentMap.StageWR[1][0].Rank}");
+        Console.WriteLine($"Map StageWR ReplayFramesBase64.Length: {CurrentMap.StageWR[1][0].ReplayFrames?.ToString().Length}");
+        Console.WriteLine($"Map StageWR ReplayFrames.Length: {CurrentMap.StageWR[1][0].ReplayFrames?.ToString().Length}");
+
+        Console.WriteLine($"Map Bonus Completions ({CurrentMap.Bonuses} + 1): {CurrentMap.BonusCompletions.Length}");
+
+        if (CurrentMap.Stages > 0)
+        {
+            for (int i = 1; i <= CurrentMap.Stages; i++)
+            {
+                Console.WriteLine($"========== Stage {i} ==========");
+                Console.WriteLine($"ID: {CurrentMap.StageWR[i][0].ID}");
+                Console.WriteLine($"Name: {CurrentMap.StageWR[i][0].Name}");
+                Console.WriteLine($"RunTime: {CurrentMap.StageWR[i][0].RunTime}");
+                Console.WriteLine($"Type: {CurrentMap.StageWR[i][0].Type}");
+                Console.WriteLine($"Rank: {CurrentMap.StageWR[i][0].Rank}");
+                Console.WriteLine($"Stage Completions: {CurrentMap.StageCompletions[i][0]}");
+            }
+        }
+    }
 }

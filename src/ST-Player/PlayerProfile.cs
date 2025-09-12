@@ -1,23 +1,18 @@
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SurfTimer.Data;
+using SurfTimer.Shared.DTO;
+using SurfTimer.Shared.Entities;
+using System.Runtime.CompilerServices;
 
 namespace SurfTimer;
 
-internal class PlayerProfile
+public class PlayerProfile : PlayerProfileEntity
 {
-    public int ID { get; set; } = 0;
-    public string Name { get; set; } = "";
-    public ulong SteamID { get; set; } = 0;
-    public string Country { get; set; } = "";
-    public int JoinDate { get; set; } = 0;
-    public int LastSeen { get; set; } = 0;
-    public int Connections { get; set; } = 0;
     private readonly ILogger<PlayerProfile> _logger;
     private readonly IDataAccessService _dataService;
 
-    public PlayerProfile(ulong steamId, string name = "", string country = "")
+    internal PlayerProfile(ulong steamId, string name = "", string country = "")
     {
         // Resolve the logger instance from the DI container
         _logger = SurfTimer.ServiceProvider.GetRequiredService<ILogger<PlayerProfile>>();
@@ -31,32 +26,31 @@ internal class PlayerProfile
 
     /// <summary>
     /// Deals with retrieving, creating and updating a Player's information in the database upon joining the server.
-    /// Automatically detects whether to use API Calls or Queries.
     /// </summary>
     /// <param name="steamId">Steam ID of the player</param>
     /// <param name="name">Name of the player</param>
     /// <param name="country">Country of the player</param>
     /// <returns cref="PlayerProfile">PlayerProfile object</returns>
-    public static async Task<PlayerProfile> CreateAsync(ulong steamId, string name = "", string country = "")
+    internal static async Task<PlayerProfile> CreateAsync(ulong steamId, string name = "", string country = "")
     {
         var profile = new PlayerProfile(steamId, name, country);
         await profile.InitializeAsync();
         return profile;
     }
 
-    private async Task InitializeAsync([CallerMemberName] string methodName = "")
+    internal async Task InitializeAsync([CallerMemberName] string methodName = "")
     {
         await GetPlayerProfile();
 
         _logger.LogTrace("[{ClassName}] {MethodName} -> InitializeAsync -> [{ConnType}] We got ProfileID {ProfileID} ({PlayerName})",
-            nameof(PlayerProfile), methodName, Config.API.GetApiOnly() ? "API" : "DB", this.ID, this.Name
+            nameof(PlayerProfile), methodName, Config.Api.GetApiOnly() ? "API" : "DB", this.ID, this.Name
         );
     }
 
     /// <summary>
-    /// Retrieves all the data for the player from the database.
+    /// Retrieves all the data for the player profile from the database.
     /// </summary>
-    public async Task GetPlayerProfile([CallerMemberName] string methodName = "")
+    internal async Task GetPlayerProfile([CallerMemberName] string methodName = "")
     {
         var profile = await _dataService.GetPlayerProfileAsync(this.SteamID);
 
@@ -83,16 +77,16 @@ internal class PlayerProfile
     }
 
     /// <summary>
-    /// Insert new player information into the database.
+    /// Insert new player profile information into the database.
     /// Retrieves the ID of the newly created player.
     /// </summary>
-    public async Task InsertPlayerProfile([CallerMemberName] string methodName = "")
+    internal async Task InsertPlayerProfile([CallerMemberName] string methodName = "")
     {
-        var profile = new PlayerProfileDataModel
+        var profile = new PlayerProfileDto
         {
             SteamID = this.SteamID,
-            Name = this.Name,
-            Country = this.Country
+            Name = this.Name!,
+            Country = this.Country!
         };
 
         this.ID = await _dataService.InsertPlayerProfileAsync(profile);
@@ -105,20 +99,20 @@ internal class PlayerProfile
     }
 
     /// <summary>
-    /// Updates the information in the database for the player. Increments `connections` and changes nickname.
+    /// Updates the information in the database for the player profile. Increments `connections` and changes nickname.
     /// </summary>
     /// <param name="name">Player Name</param>
-    /// <exception cref="Exception"></exception>
-    public async Task UpdatePlayerProfile(string name, [CallerMemberName] string methodName = "")
+    internal async Task UpdatePlayerProfile(string name, [CallerMemberName] string methodName = "")
     {
         this.Name = name;
-        await _dataService.UpdatePlayerProfileAsync(new PlayerProfileDataModel
+        var dto = new PlayerProfileDto
         {
-            ID = this.ID,
             SteamID = this.SteamID,
             Name = this.Name,
-            Country = this.Country
-        });
+            Country = this.Country!
+        };
+
+        await _dataService.UpdatePlayerProfileAsync(dto, this.ID);
 
 #if DEBUG
         _logger.LogDebug("[{ClassName}] {MethodName} -> UpdatePlayerProfile -> [{ConnType}] Updated player {PlayerName} ({SteamID}) with ID {ProfileID}.",

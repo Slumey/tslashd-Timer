@@ -1,30 +1,23 @@
-using System.Data;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SurfTimer.Data;
+using SurfTimer.Shared.DTO;
+using SurfTimer.Shared.Entities;
+using SurfTimer.Shared.Types;
+using System.Data;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace SurfTimer;
 
-internal class Map
+public class Map : MapEntity
 {
-    // Map information
-    public int ID { get; set; } = -1; // Can we use this to re-trigger retrieving map information from the database?? (all db IDs are auto-incremented)
-    public string Name { get; set; } = string.Empty;
-    public string Author { get; set; } = "";
-    public int Tier { get; set; } = 0;
-    public int Stages { get; set; } = 0;
     public int TotalCheckpoints { get; set; } = 0;
-    public int Bonuses { get; set; } = 0;
-    public bool Ranked { get; set; } = false;
-    public int DateAdded { get; set; } = 0;
-    public int LastPlayed { get; set; } = 0;
     /// <summary>
     /// Map Completion Count - Refer to as MapCompletions[style]
     /// </summary>
@@ -32,11 +25,11 @@ internal class Map
     /// <summary>
     /// Bonus Completion Count - Refer to as BonusCompletions[bonus#][style]
     /// </summary>
-    public Dictionary<int, int>[] BonusCompletions { get; set; } = new Dictionary<int, int>[32];
+    public Dictionary<int, int>[] BonusCompletions { get; set; } = Array.Empty<Dictionary<int, int>>();
     /// <summary>
     /// Stage Completion Count - Refer to as StageCompletions[stage#][style]
     /// </summary>
-    public Dictionary<int, int>[] StageCompletions { get; set; } = new Dictionary<int, int>[32];
+    public Dictionary<int, int>[] StageCompletions { get; set; } = Array.Empty<Dictionary<int, int>>();
     /// <summary>
     /// Map World Record - Refer to as WR[style]
     /// </summary>
@@ -44,11 +37,11 @@ internal class Map
     /// <summary>
     /// Bonus World Record - Refer to as BonusWR[bonus#][style]
     /// </summary>
-    public Dictionary<int, PersonalBest>[] BonusWR { get; set; } = new Dictionary<int, PersonalBest>[32];
+    public Dictionary<int, PersonalBest>[] BonusWR { get; set; } = Array.Empty<Dictionary<int, PersonalBest>>();
     /// <summary>
     /// Stage World Record - Refer to as StageWR[stage#][style]
     /// </summary>
-    public Dictionary<int, PersonalBest>[] StageWR { get; set; } = new Dictionary<int, PersonalBest>[32];
+    public Dictionary<int, PersonalBest>[] StageWR { get; set; } = Array.Empty<Dictionary<int, PersonalBest>>();
 
     /// <summary>
     /// Not sure what this is for.
@@ -60,18 +53,18 @@ internal class Map
 
     // Zone Origin Information
     /* Map Start/End zones */
-    public Vector_t StartZone { get; set; } = new Vector_t(0, 0, 0);
-    public QAngle_t StartZoneAngles { get; set; } = new QAngle_t(0, 0, 0);
-    public Vector_t EndZone { get; set; } = new Vector_t(0, 0, 0);
+    public VectorT StartZone { get; set; } = new VectorT(0, 0, 0);
+    public QAngleT StartZoneAngles { get; set; } = new QAngleT(0, 0, 0);
+    public VectorT EndZone { get; set; } = new VectorT(0, 0, 0);
     /* Map Stage zones */
-    public Vector_t[] StageStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new Vector_t(0, 0, 0)).ToArray();
-    public QAngle_t[] StageStartZoneAngles { get; } = Enumerable.Repeat(0, 99).Select(x => new QAngle_t(0, 0, 0)).ToArray();
+    public VectorT[] StageStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new VectorT(0, 0, 0)).ToArray();
+    public QAngleT[] StageStartZoneAngles { get; } = Enumerable.Repeat(0, 99).Select(x => new QAngleT(0, 0, 0)).ToArray();
     /* Map Bonus zones */
-    public Vector_t[] BonusStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new Vector_t(0, 0, 0)).ToArray(); // To-do: Implement bonuses
-    public QAngle_t[] BonusStartZoneAngles { get; } = Enumerable.Repeat(0, 99).Select(x => new QAngle_t(0, 0, 0)).ToArray(); // To-do: Implement bonuses
-    public Vector_t[] BonusEndZone { get; } = Enumerable.Repeat(0, 99).Select(x => new Vector_t(0, 0, 0)).ToArray(); // To-do: Implement bonuses
+    public VectorT[] BonusStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new VectorT(0, 0, 0)).ToArray(); // To-do: Implement bonuses
+    public QAngleT[] BonusStartZoneAngles { get; } = Enumerable.Repeat(0, 99).Select(x => new QAngleT(0, 0, 0)).ToArray(); // To-do: Implement bonuses
+    public VectorT[] BonusEndZone { get; } = Enumerable.Repeat(0, 99).Select(x => new VectorT(0, 0, 0)).ToArray(); // To-do: Implement bonuses
     /* Map Checkpoint zones */
-    public Vector_t[] CheckpointStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new Vector_t(0, 0, 0)).ToArray();
+    public VectorT[] CheckpointStartZone { get; } = Enumerable.Repeat(0, 99).Select(x => new VectorT(0, 0, 0)).ToArray();
 
     public ReplayManager ReplayManager { get; set; } = null!;
 
@@ -88,54 +81,55 @@ internal class Map
         // Set map name
         this.Name = name;
 
+        // Load zones
+        MapLoadZones();
+        _logger.LogInformation("[{ClassName}] -> Zones have been loaded. | Bonuses: {Bonuses} | Stages: {Stages} | Checkpoints: {Checkpoints}",
+            nameof(Map), this.Bonuses, this.Stages, this.TotalCheckpoints
+        );
+    }
+
+    internal async Task InitializeAsync([CallerMemberName] string methodName = "")
+    {
+        // Initialize ReplayManager with placeholder values
+        this.ReplayManager = new ReplayManager(-1, this.Stages > 0, this.Bonuses > 0, null!);
+
         // Initialize WR variables
+        this.StageWR = new Dictionary<int, PersonalBest>[this.Stages + 1]; // We do + 1 cause stages and bonuses start from 1, not from 0
+        this.StageCompletions = new Dictionary<int, int>[this.Stages + 1];
+        this.BonusWR = new Dictionary<int, PersonalBest>[this.Bonuses + 1];
+        this.BonusCompletions = new Dictionary<int, int>[this.Bonuses + 1];
+        int initStages = 0;
+        int initBonuses = 0;
+
         foreach (int style in Config.Styles)
         {
-            this.WR[style] = new PersonalBest();
-            this.MapCompletions[style] = -1;
+            this.WR[style] = new PersonalBest { Type = 0 };
+            this.MapCompletions[style] = 0;
+
+            for (int i = 1; i <= this.Stages; i++)
+            {
+                this.StageWR[i] = new Dictionary<int, PersonalBest>();
+                this.StageWR[i][style] = new PersonalBest { Type = 2 };
+                this.StageCompletions[i] = new Dictionary<int, int>();
+                this.StageCompletions[i][style] = 0;
+                initStages++;
+            }
+
+            for (int i = 1; i <= this.Bonuses; i++)
+            {
+                this.BonusWR[i] = new Dictionary<int, PersonalBest>();
+                this.BonusWR[i][style] = new PersonalBest { Type = 1 };
+                this.BonusCompletions[i] = new Dictionary<int, int>();
+                this.BonusCompletions[i][style] = 0;
+                initBonuses++;
+            }
         }
 
-        for (int i = 0; i < 32; i++)
-        {
-            this.BonusWR[i] = new Dictionary<int, PersonalBest>();
-            this.BonusWR[i][0] = new PersonalBest();
-            this.BonusWR[i][0].Type = 1;
-            this.BonusCompletions[i] = new Dictionary<int, int>();
-
-            this.StageWR[i] = new Dictionary<int, PersonalBest>();
-            this.StageWR[i][0] = new PersonalBest();
-            this.StageWR[i][0].Type = 2;
-            this.StageCompletions[i] = new Dictionary<int, int>();
-        }
-    }
-
-    public static async Task<Map> CreateAsync(string name)
-    {
-        var map = new Map(name);
-        await map.InitializeAsync();
-        return map;
-    }
-
-    private async Task InitializeAsync([CallerMemberName] string methodName = "")
-    {
-        // Load zones
-        Map_Load_Zones();
-        _logger.LogInformation("[{ClassName}] {MethodName} -> Zones have been loaded. | Bonuses: {Bonuses} | Stages: {Stages} | Checkpoints: {Checkpoints}",
-            nameof(Map), methodName, this.Bonuses, this.Stages, this.TotalCheckpoints
+        _logger.LogInformation("[{ClassName}] {MethodName} -> Initialized WR variables. | Bonuses: {Bonuses} | Stages: {Stages}",
+            nameof(Map), methodName, initBonuses, initStages
         );
 
-        // Initialize ReplayManager with placeholder values
-        // Console.WriteLine($"CS2 Surf DEBUG >> internal class Map -> InitializeAsync -> Initializing ReplayManager(-1, {this.Stages > 0}, false, null!)");
-        this.ReplayManager = new ReplayManager(-1, this.Stages > 0, this.Bonuses > 0, null!); // Adjust values as needed
-
-        // Start timing
-        var stopwatch = Stopwatch.StartNew();
         await LoadMapInfo();
-        stopwatch.Stop();
-
-        _logger.LogInformation("[{ClassName}] {MethodName} -> We got MapID = {ID} ({Name}) in {ElapsedMilliseconds}ms | API = {API}",
-            nameof(Map), methodName, ID, Name, stopwatch.ElapsedMilliseconds, Config.API.GetApiOnly()
-        );
     }
 
     /// <summary>
@@ -144,7 +138,7 @@ internal class Map
     // To-do: This loops through all the triggers. While that's great and comprehensive, some maps have two triggers with the exact same name, because there are two
     //        for each side of the course (left and right, for example). We should probably work on automatically catching this. 
     //        Maybe even introduce a new naming convention?
-    internal void Map_Load_Zones([CallerMemberName] string methodName = "")
+    internal void MapLoadZones([CallerMemberName] string methodName = "")
     {
         // Gathering zones from the map
         IEnumerable<CBaseTrigger> triggers = Utilities.FindAllEntitiesByDesignerName<CBaseTrigger>("trigger_multiple");
@@ -168,8 +162,8 @@ internal class Map
                             teleport.Entity!.Name.Contains("spawn_stage1_start") ||
                             teleport.Entity!.Name.Contains("spawn_s1_start")))
                         {
-                            this.StartZone = new Vector_t(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
-                            this.StartZoneAngles = new QAngle_t(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
+                            this.StartZone = new VectorT(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
+                            this.StartZoneAngles = new QAngleT(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
                             foundPlayerSpawn = true;
                             break;
                         }
@@ -177,14 +171,14 @@ internal class Map
 
                     if (!foundPlayerSpawn)
                     {
-                        this.StartZone = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                        this.StartZone = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                     }
                 }
 
                 // Map end zone
                 else if (trigger.Entity!.Name.Contains("map_end"))
                 {
-                    this.EndZone = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                    this.EndZone = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                 }
 
                 // Stage start zones
@@ -199,8 +193,8 @@ internal class Map
                         if (teleport.Entity!.Name != null &&
                             (IsInZone(trigger.AbsOrigin!, trigger.Collision.BoundingRadius, teleport.AbsOrigin!) || (Regex.Match(teleport.Entity.Name, "^spawn_s([1-9][0-9]?|tage[1-9][0-9]?)_start$").Success && Int32.Parse(Regex.Match(teleport.Entity.Name, "[0-9][0-9]?").Value) == stage)))
                         {
-                            this.StageStartZone[stage] = new Vector_t(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
-                            this.StageStartZoneAngles[stage] = new QAngle_t(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
+                            this.StageStartZone[stage] = new VectorT(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
+                            this.StageStartZoneAngles[stage] = new QAngleT(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
                             this.Stages++; // Count stage zones for the map to populate DB
                             foundPlayerSpawn = true;
                             break;
@@ -209,7 +203,7 @@ internal class Map
 
                     if (!foundPlayerSpawn)
                     {
-                        this.StageStartZone[stage] = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                        this.StageStartZone[stage] = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                         this.Stages++;
                     }
                 }
@@ -217,7 +211,7 @@ internal class Map
                 // Checkpoint start zones (linear maps)
                 else if (Regex.Match(trigger.Entity.Name, "^map_c(p[1-9][0-9]?|heckpoint[1-9][0-9]?)$").Success)
                 {
-                    this.CheckpointStartZone[Int32.Parse(Regex.Match(trigger.Entity.Name, "[0-9][0-9]?").Value)] = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                    this.CheckpointStartZone[Int32.Parse(Regex.Match(trigger.Entity.Name, "[0-9][0-9]?").Value)] = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                     this.TotalCheckpoints++; // Might be useful to have this in DB entry
                 }
 
@@ -233,8 +227,8 @@ internal class Map
                         if (teleport.Entity!.Name != null &&
                             (IsInZone(trigger.AbsOrigin!, trigger.Collision.BoundingRadius, teleport.AbsOrigin!) || (Regex.Match(teleport.Entity.Name, "^spawn_b([1-9][0-9]?|onus[1-9][0-9]?)_start$").Success && Int32.Parse(Regex.Match(teleport.Entity.Name, "[0-9][0-9]?").Value) == bonus)))
                         {
-                            this.BonusStartZone[bonus] = new Vector_t(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
-                            this.BonusStartZoneAngles[bonus] = new QAngle_t(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
+                            this.BonusStartZone[bonus] = new VectorT(teleport.AbsOrigin!.X, teleport.AbsOrigin!.Y, teleport.AbsOrigin!.Z);
+                            this.BonusStartZoneAngles[bonus] = new QAngleT(teleport.AbsRotation!.X, teleport.AbsRotation!.Y, teleport.AbsRotation!.Z);
                             this.Bonuses++; // Count bonus zones for the map to populate DB
                             foundPlayerSpawn = true;
                             break;
@@ -243,22 +237,25 @@ internal class Map
 
                     if (!foundPlayerSpawn)
                     {
-                        this.BonusStartZone[bonus] = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                        this.BonusStartZone[bonus] = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                         this.Bonuses++;
                     }
                 }
 
                 else if (Regex.Match(trigger.Entity.Name, "^b([1-9][0-9]?|onus[1-9][0-9]?)_end$").Success)
                 {
-                    this.BonusEndZone[Int32.Parse(Regex.Match(trigger.Entity.Name, "[0-9][0-9]?").Value)] = new Vector_t(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
+                    this.BonusEndZone[Int32.Parse(Regex.Match(trigger.Entity.Name, "[0-9][0-9]?").Value)] = new VectorT(trigger.AbsOrigin!.X, trigger.AbsOrigin!.Y, trigger.AbsOrigin!.Z);
                 }
             }
         }
 
         if (this.Stages > 0) // Account for stage 1, not counted above
+        {
+            this.TotalCheckpoints = this.Stages; // Stages are counted as Checkpoints on Staged maps during MAP runs
             this.Stages += 1;
+        }
 
-        _logger.LogTrace("[{ClassName}] {MethodName} -> Start zone: {StartZoneX},{StartZoneY},{StartZoneZ} | End zone: {EndZoneX},{EndZoneY},{EndZoneZ}",
+        _logger.LogTrace("[{ClassName}] {MethodName} -> Start zone: {StartZoneX}, {StartZoneY}, {StartZoneZ} | End zone: {EndZoneX}, {EndZoneY}, {EndZoneZ}",
             nameof(Map), methodName, this.StartZone.X, this.StartZone.Y, this.StartZone.Z, this.EndZone.X, this.EndZone.Y, this.EndZone.Z
         );
 
@@ -267,13 +264,12 @@ internal class Map
 
     /// <summary>
     /// Inserts a new map entry in the database.
-    /// Automatically detects whether to use API Calls or MySQL query.
     /// </summary>
     internal async Task InsertMapInfo([CallerMemberName] string methodName = "")
     {
-        var mapInfo = new MapInfoDataModel
+        var mapInfo = new MapDto
         {
-            Name = this.Name,
+            Name = this.Name!,
             Author = "Unknown", // Or set appropriately
             Tier = this.Tier,
             Stages = this.Stages,
@@ -283,43 +279,40 @@ internal class Map
 
         try
         {
-            // this.ID = await _dataService.InsertMapInfoAsync(mapInfo);
-            int mapId = await _dataService.InsertMapInfoAsync(mapInfo);
-            this.ID = mapId;
+            this.ID = await _dataService.InsertMapInfoAsync(mapInfo);
+
             _logger.LogInformation("[{ClassName}] {MethodName} -> Map '{Map}' inserted successfully with ID {ID}.",
                 nameof(Map), methodName, this.Name, this.ID
             );
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "[{ClassName}] {MethodName} -> Failed to insert map '{Map}'.",
-                nameof(Map), methodName, this.Name
+            _logger.LogCritical(ex, "[{ClassName}] {MethodName} -> Failed to insert map '{Map}'. Exception: {ExceptionMessage}",
+                nameof(Map), methodName, this.Name, ex.Message
             );
-            throw;
+            throw new InvalidOperationException($"Failed to insert map '{Name}'. See inner exception for details.", ex);
         }
     }
 
     /// <summary>
     /// Updates last played, stages, bonuses for the map in the database.
-    /// Automatically detects whether to use API Calls or MySQL query.
     /// </summary>
     internal async Task UpdateMapInfo([CallerMemberName] string methodName = "")
     {
-        var mapInfo = new MapInfoDataModel
+        var mapInfo = new MapDto
         {
-            ID = this.ID,
-            Name = this.Name,
-            Author = "Unknown", // adjust as necessary
+            Name = this.Name!,
+            Author = this.Author!,
             Tier = this.Tier,
             Stages = this.Stages,
             Bonuses = this.Bonuses,
-            Ranked = false,
+            Ranked = this.Ranked,
             LastPlayed = (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds()
         };
 
         try
         {
-            await _dataService.UpdateMapInfoAsync(mapInfo);
+            await _dataService.UpdateMapInfoAsync(mapInfo, this.ID);
 
 #if DEBUG
             _logger.LogDebug("[{ClassName}] {MethodName} -> Updated map '{Map}' (ID: {ID}).",
@@ -329,24 +322,23 @@ internal class Map
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "[{ClassName}] {MethodName} -> Failed to update map '{Map}'.",
-                nameof(Map), methodName, this.Name
+            _logger.LogCritical(ex, "[{ClassName}] {MethodName} -> Failed to update map '{Map}'. Exception Message: {ExceptionMessage}",
+                nameof(Map), methodName, this.Name, ex.Message
             );
-            throw;
+            throw new InvalidOperationException($"Failed to update map '{Name}'. See inner exception for details.", ex);
         }
     }
 
     /// <summary>
-    /// Load map info data using MySQL Queries and update the info as well or create a new entry.
+    /// Load/update/create Map table entry.
     /// Loads the record runs for the map as well.
-    /// Automatically detects whether to use API Calls or MySQL query.
     /// </summary>
-    /// <param name="updateData" cref="bool">Should we run UPDATE query for the map</param>
+    /// <param name="updateData">Should we run UPDATE query for the map</param>
     internal async Task LoadMapInfo(bool updateData = true, [CallerMemberName] string methodName = "")
     {
         bool newMap = false;
 
-        var mapInfo = await _dataService.GetMapInfoAsync(this.Name);
+        var mapInfo = await _dataService.GetMapInfoAsync(this.Name!);
 
         if (mapInfo != null)
         {
@@ -385,24 +377,16 @@ internal class Map
     /// Extracts Map, Bonus, Stage record runs and the total completions for each style. 
     /// (NOT TESTED WITH MORE THAN 1 STYLE)
     /// For the Map WR it also gets the Checkpoints data.
-    /// Automatically detects whether to use API Calls or MySQL query.
-    /// TODO: Re-do the API with the new query and fix the API assign of values
     /// </summary>
     internal async Task LoadMapRecordRuns([CallerMemberName] string methodName = "")
     {
-        // int totalMapRuns = 0;
-        // int totalStageRuns = 0;
-        // int totalBonusRuns = 0;
-        this.ConnectedMapTimes.Clear();
-
-        int qType;
-        int qStage;
-        int qStyle;
-
-        // Replay Stuff
-        JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = false, Converters = { new Vector_tConverter(), new QAngle_tConverter() } };
+        //this.ConnectedMapTimes.Clear(); // This is for Custom Replays (PB replays?) - T
 
         var runs = await _dataService.GetMapRecordRunsAsync(this.ID);
+
+        _logger.LogInformation("[{ClassName}] {MethodName} -> Received {Length} runs from `GetMapRecordRunsAsync`",
+            nameof(Map), methodName, runs.Count
+        );
 
         foreach (var run in runs)
         {
@@ -410,7 +394,7 @@ internal class Map
             {
                 case 0: // Map WR data and total completions
                     WR[run.Style].ID = run.ID;
-                    WR[run.Style].Ticks = run.RunTime;
+                    WR[run.Style].RunTime = run.RunTime;
                     WR[run.Style].StartVelX = run.StartVelX;
                     WR[run.Style].StartVelY = run.StartVelY;
                     WR[run.Style].StartVelZ = run.StartVelZ;
@@ -419,16 +403,15 @@ internal class Map
                     WR[run.Style].EndVelZ = run.EndVelZ;
                     WR[run.Style].RunDate = run.RunDate;
                     WR[run.Style].Name = run.Name;
-                    // totalMapRuns = run.TotalCount;
-                    ConnectedMapTimes.Add(run.ID);
+                    /// ConnectedMapTimes.Add(run.ID);
                     MapCompletions[run.Style] = run.TotalCount;
 
-                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFramesBase64);
+                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFrames!);
                     break;
 
                 case 1: // Bonus WR data and total completions
                     BonusWR[run.Stage][run.Style].ID = run.ID;
-                    BonusWR[run.Stage][run.Style].Ticks = run.RunTime;
+                    BonusWR[run.Stage][run.Style].RunTime = run.RunTime;
                     BonusWR[run.Stage][run.Style].StartVelX = run.StartVelX;
                     BonusWR[run.Stage][run.Style].StartVelY = run.StartVelY;
                     BonusWR[run.Stage][run.Style].StartVelZ = run.StartVelZ;
@@ -439,12 +422,12 @@ internal class Map
                     BonusWR[run.Stage][run.Style].Name = run.Name;
                     BonusCompletions[run.Stage][run.Style] = run.TotalCount;
 
-                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFramesBase64);
+                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFrames!);
                     break;
 
                 case 2: // Stage WR data and total completions
                     StageWR[run.Stage][run.Style].ID = run.ID;
-                    StageWR[run.Stage][run.Style].Ticks = run.RunTime;
+                    StageWR[run.Stage][run.Style].RunTime = run.RunTime;
                     StageWR[run.Stage][run.Style].StartVelX = run.StartVelX;
                     StageWR[run.Stage][run.Style].StartVelY = run.StartVelY;
                     StageWR[run.Stage][run.Style].StartVelZ = run.StartVelZ;
@@ -455,7 +438,7 @@ internal class Map
                     StageWR[run.Stage][run.Style].Name = run.Name;
                     StageCompletions[run.Stage][run.Style] = run.TotalCount;
 
-                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFramesBase64);
+                    SetReplayData(run.Type, run.Style, run.Stage, run.ReplayFrames!);
                     break;
             }
         }
@@ -466,7 +449,7 @@ internal class Map
             {
 #if DEBUG
                 _logger.LogDebug("[{ClassName}] {MethodName} -> LoadMapRecordRuns : Map -> [{DBorAPI}] Loaded {MapCompletions} runs (MapID {MapID} | Style {Style}). WR by {PlayerName} - {Time}",
-                    nameof(Map), methodName, (Config.API.GetApiOnly() ? "API" : "DB"), this.MapCompletions[style], this.ID, style, this.WR[style].Name, PlayerHUD.FormatTime(this.WR[style].Ticks)
+                    nameof(Map), methodName, Config.API.GetApiOnly() ? "API" : "DB", this.MapCompletions[style], this.ID, style, this.WR[style].Name, PlayerHUD.FormatTime(this.WR[style].RunTime)
                 );
 #endif
 
@@ -475,20 +458,10 @@ internal class Map
                 stopwatch.Stop();
 
                 _logger.LogInformation("[{ClassName}] {MethodName} -> Finished WR.[{Style}].LoadCheckpoints() in {ElapsedMilliseconds}ms | API = {API}",
-                    nameof(Map), methodName, style, stopwatch.ElapsedMilliseconds, Config.API.GetApiOnly()
+                    nameof(Map), methodName, style, stopwatch.ElapsedMilliseconds, Config.Api.GetApiOnly()
                 );
             }
         }
-    }
-
-    /// <summary>
-    /// Redirects to `PersonalBest.LoadCheckpoints()`.
-    /// Extracts all entries from Checkpoints table of the World Record for the given `style` 
-    /// </summary>
-    /// <param name="style">Style to load</param>
-    internal async Task Get_Record_Run_Checkpoints(int style = 0)
-    {
-        await this.WR[style].LoadCheckpoints();
     }
 
     /// <summary>
@@ -499,12 +472,12 @@ internal class Map
     /// <param name="style">Style to add</param>
     /// <param name="stage">Stage to add</param>
     /// <param name="replayFramesBase64">Base64 encoded string for the replay_frames</param>
-    internal void SetReplayData(int type, int style, int stage, string replayFramesBase64, [CallerMemberName] string methodName = "")
+    internal void SetReplayData(int type, int style, int stage, ReplayFramesString replayFramesBase64, [CallerMemberName] string methodName = "")
     {
-        JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = false, Converters = { new Vector_tConverter(), new QAngle_tConverter() } };
+        JsonSerializerOptions options = new JsonSerializerOptions { WriteIndented = false, Converters = { new VectorTConverter(), new QAngleTConverter() } };
 
         // Decompress the Base64 string
-        string json = Compressor.Decompress(replayFramesBase64);
+        string json = Compressor.Decompress(replayFramesBase64.ToString());
 
         // Deserialize to List<ReplayFrame>
         List<ReplayFrame> frames = JsonSerializer.Deserialize<List<ReplayFrame>>(json, options)!;
@@ -512,15 +485,14 @@ internal class Map
         switch (type)
         {
             case 0: // Map Replays
-                // Console.WriteLine($"CS2 Surf DEBUG >> internal class Map -> internal void SetReplayData -> [MapWR] Setting run {this.WR[style].ID} {PlayerHUD.FormatTime(this.WR[style].Ticks)} (Ticks = {this.WR[style].Ticks}; Frames = {frames.Count}) to `ReplayManager.MapWR`");
                 _logger.LogTrace("[{ClassName}] {MethodName} -> SetReplayData -> [MapWR] Setting run {RunID} {RunTime} (Ticks = {RunTicks}; Frames = {TotalFrames})",
-                    nameof(Map), methodName, this.WR[style].ID, PlayerHUD.FormatTime(this.WR[style].Ticks), this.WR[style].Ticks, frames.Count
+                    nameof(Map), methodName, this.WR[style].ID, PlayerHud.FormatTime(this.WR[style].RunTime), this.WR[style].RunTime, frames.Count
                 );
                 if (this.ReplayManager.MapWR.IsPlaying)
                     this.ReplayManager.MapWR.Stop();
 
-                this.ReplayManager.MapWR.RecordPlayerName = this.WR[style].Name;
-                this.ReplayManager.MapWR.RecordRunTime = this.WR[style].Ticks;
+                this.ReplayManager.MapWR.RecordPlayerName = this.WR[style].Name!;
+                this.ReplayManager.MapWR.RecordRunTime = this.WR[style].RunTime;
                 this.ReplayManager.MapWR.Frames = frames;
                 this.ReplayManager.MapWR.MapTimeID = this.WR[style].ID;
                 this.ReplayManager.MapWR.MapID = this.ID;
@@ -530,54 +502,39 @@ internal class Map
                     ReplayFrame f = frames[i];
                     switch (f.Situation)
                     {
-                        case ReplayFrameSituation.START_ZONE_ENTER:
+                        case ReplayFrameSituation.START_ZONE_ENTER or ReplayFrameSituation.START_ZONE_EXIT:
                             this.ReplayManager.MapWR.MapSituations.Add(i);
-                            // Console.WriteLine($"START_ZONE_ENTER: {i} | Situation {f.Situation}");
+                            /// Console.WriteLine($"START_ZONE_ENTER: {i} | Situation {f.Situation}");
                             break;
-                        case ReplayFrameSituation.START_ZONE_EXIT:
-                            this.ReplayManager.MapWR.MapSituations.Add(i);
-                            // Console.WriteLine($"START_ZONE_EXIT: {i} | Situation {f.Situation}");
-                            break;
-                        case ReplayFrameSituation.STAGE_ZONE_ENTER:
+                        case ReplayFrameSituation.STAGE_ZONE_ENTER or ReplayFrameSituation.STAGE_ZONE_EXIT:
                             this.ReplayManager.MapWR.StageEnterSituations.Add(i);
-                            // Console.WriteLine($"STAGE_ZONE_ENTER: {i} | Situation {f.Situation}");
+                            /// Console.WriteLine($"STAGE_ZONE_ENTER: {i} | Situation {f.Situation}");
                             break;
-                        case ReplayFrameSituation.STAGE_ZONE_EXIT:
-                            this.ReplayManager.MapWR.StageExitSituations.Add(i);
-                            // Console.WriteLine($"STAGE_ZONE_EXIT: {i} | Situation {f.Situation}");
-                            break;
-                        case ReplayFrameSituation.CHECKPOINT_ZONE_ENTER:
+                        case ReplayFrameSituation.CHECKPOINT_ZONE_ENTER or ReplayFrameSituation.CHECKPOINT_ZONE_EXIT:
                             this.ReplayManager.MapWR.CheckpointEnterSituations.Add(i);
-                            // Console.WriteLine($"CHECKPOINT_ZONE_ENTER: {i} | Situation {f.Situation}");
+                            /// Console.WriteLine($"CHECKPOINT_ZONE_ENTER: {i} | Situation {f.Situation}");
                             break;
-                        case ReplayFrameSituation.CHECKPOINT_ZONE_EXIT:
-                            this.ReplayManager.MapWR.CheckpointExitSituations.Add(i);
-                            // Console.WriteLine($"CHECKPOINT_ZONE_EXIT: {i} | Situation {f.Situation}");
-                            break;
-                        case ReplayFrameSituation.END_ZONE_ENTER:
-                            // Console.WriteLine($"END_ZONE_ENTER: {i} | Situation {f.Situation}");
-                            break;
-                        case ReplayFrameSituation.END_ZONE_EXIT:
-                            // Console.WriteLine($"END_ZONE_EXIT: {i} | Situation {f.Situation}");
+                        case ReplayFrameSituation.END_ZONE_ENTER or ReplayFrameSituation.END_ZONE_EXIT:
+                            /// Console.WriteLine($"END_ZONE_ENTER: {i} | Situation {f.Situation}");
                             break;
                     }
                 }
                 break;
             case 1: // Bonus Replays
                 // Skip if the same bonus run already exists
-                if (this.ReplayManager.AllBonusWR[stage][style].RecordRunTime == this.BonusWR[stage][style].Ticks)
+                if (this.ReplayManager.AllBonusWR[stage][style].RecordRunTime == this.BonusWR[stage][style].RunTime)
                     break;
 #if DEBUG
                 _logger.LogDebug("[{ClassName}] {MethodName} -> SetReplayData -> [BonusWR] Adding run {ID} {Time} (Ticks = {Ticks}; Frames = {Frames}) to `ReplayManager.AllBonusWR`",
-                    nameof(Map), methodName, this.BonusWR[stage][style].ID, PlayerHUD.FormatTime(this.BonusWR[stage][style].Ticks), this.BonusWR[stage][style].Ticks, frames.Count
+                    nameof(Map), methodName, this.BonusWR[stage][style].ID, PlayerHUD.FormatTime(this.BonusWR[stage][style].RunTime), this.BonusWR[stage][style].RunTime, frames.Count
                 );
 #endif
 
                 // Add all stages found to a dictionary with their data
                 this.ReplayManager.AllBonusWR[stage][style].MapID = this.ID;
                 this.ReplayManager.AllBonusWR[stage][style].Frames = frames;
-                this.ReplayManager.AllBonusWR[stage][style].RecordRunTime = this.BonusWR[stage][style].Ticks;
-                this.ReplayManager.AllBonusWR[stage][style].RecordPlayerName = this.BonusWR[stage][style].Name;
+                this.ReplayManager.AllBonusWR[stage][style].RecordRunTime = this.BonusWR[stage][style].RunTime;
+                this.ReplayManager.AllBonusWR[stage][style].RecordPlayerName = this.BonusWR[stage][style].Name!;
                 this.ReplayManager.AllBonusWR[stage][style].MapTimeID = this.BonusWR[stage][style].ID;
                 this.ReplayManager.AllBonusWR[stage][style].Stage = stage;
                 this.ReplayManager.AllBonusWR[stage][style].Type = 1;
@@ -588,10 +545,7 @@ internal class Map
                     ReplayFrame f = frames[i];
                     switch (f.Situation)
                     {
-                        case ReplayFrameSituation.START_ZONE_ENTER:
-                            this.ReplayManager.AllBonusWR[stage][style].BonusSituations.Add(i);
-                            break;
-                        case ReplayFrameSituation.END_ZONE_EXIT:
+                        case ReplayFrameSituation.START_ZONE_ENTER or ReplayFrameSituation.END_ZONE_EXIT:
                             this.ReplayManager.AllBonusWR[stage][style].BonusSituations.Add(i);
                             break;
                     }
@@ -608,8 +562,8 @@ internal class Map
                         this.ReplayManager.BonusWR.Stop();
                     this.ReplayManager.BonusWR.MapID = this.ID;
                     this.ReplayManager.BonusWR.Frames = frames;
-                    this.ReplayManager.BonusWR.RecordRunTime = this.BonusWR[stage][style].Ticks;
-                    this.ReplayManager.BonusWR.RecordPlayerName = this.BonusWR[stage][style].Name;
+                    this.ReplayManager.BonusWR.RecordRunTime = this.BonusWR[stage][style].RunTime;
+                    this.ReplayManager.BonusWR.RecordPlayerName = this.BonusWR[stage][style].Name!;
                     this.ReplayManager.BonusWR.MapTimeID = this.BonusWR[stage][style].ID;
                     this.ReplayManager.BonusWR.Stage = stage;
                     this.ReplayManager.BonusWR.Type = 1;
@@ -618,19 +572,19 @@ internal class Map
                 break;
             case 2: // Stage Replays
                 // Skip if the same stage run already exists
-                if (this.ReplayManager.AllStageWR[stage][style].RecordRunTime == this.StageWR[stage][style].Ticks)
+                if (this.ReplayManager.AllStageWR[stage][style].RecordRunTime == this.StageWR[stage][style].RunTime)
                     break;
 #if DEBUG
                 _logger.LogDebug("[{ClassName}] {MethodName} -> SetReplayData -> [StageWR] Adding run {ID} {Time} (Ticks = {Ticks}; Frames = {Frames}) to `ReplayManager.AllStageWR`",
-                    nameof(Map), methodName, this.StageWR[stage][style].ID, PlayerHUD.FormatTime(this.StageWR[stage][style].Ticks), this.StageWR[stage][style].Ticks, frames.Count
+                    nameof(Map), methodName, this.StageWR[stage][style].ID, PlayerHUD.FormatTime(this.StageWR[stage][style].RunTime), this.StageWR[stage][style].RunTime, frames.Count
                 );
 #endif
 
                 // Add all stages found to a dictionary with their data
                 this.ReplayManager.AllStageWR[stage][style].MapID = this.ID;
                 this.ReplayManager.AllStageWR[stage][style].Frames = frames;
-                this.ReplayManager.AllStageWR[stage][style].RecordRunTime = this.StageWR[stage][style].Ticks;
-                this.ReplayManager.AllStageWR[stage][style].RecordPlayerName = this.StageWR[stage][style].Name;
+                this.ReplayManager.AllStageWR[stage][style].RecordRunTime = this.StageWR[stage][style].RunTime;
+                this.ReplayManager.AllStageWR[stage][style].RecordPlayerName = this.StageWR[stage][style].Name!;
                 this.ReplayManager.AllStageWR[stage][style].MapTimeID = this.StageWR[stage][style].ID;
                 this.ReplayManager.AllStageWR[stage][style].Stage = stage;
                 this.ReplayManager.AllStageWR[stage][style].Type = 2;
@@ -662,8 +616,8 @@ internal class Map
                         this.ReplayManager.StageWR.Stop();
                     this.ReplayManager.StageWR.MapID = this.ID;
                     this.ReplayManager.StageWR.Frames = frames;
-                    this.ReplayManager.StageWR.RecordRunTime = this.StageWR[stage][style].Ticks;
-                    this.ReplayManager.StageWR.RecordPlayerName = this.StageWR[stage][style].Name;
+                    this.ReplayManager.StageWR.RecordRunTime = this.StageWR[stage][style].RunTime;
+                    this.ReplayManager.StageWR.RecordPlayerName = this.StageWR[stage][style].Name!;
                     this.ReplayManager.StageWR.MapTimeID = this.StageWR[stage][style].ID;
                     this.ReplayManager.StageWR.Stage = stage;
                     this.ReplayManager.StageWR.Type = 2;
@@ -675,22 +629,23 @@ internal class Map
         // Start the new map replay if none existed until now
         Server.NextFrame(() =>
         {
-            // Console.WriteLine($"CS2 Surf DEBUG >> internal class Map -> internal void SetReplayData -> [MapWR] ResetReplay() and Start()");
-            this.ReplayManager.MapWR.ResetReplay();
-            this.ReplayManager.MapWR.Start();
+            if (type == 0 && this.ReplayManager.MapWR != null && !this.ReplayManager.MapWR.IsPlaying)
+            {
+                this.ReplayManager.MapWR.ResetReplay();
+                this.ReplayManager.MapWR.Start();
+            }
+            else if (type == 1 && this.ReplayManager.BonusWR != null && !this.ReplayManager.BonusWR.IsPlaying)
+            {
+                this.ReplayManager.BonusWR.ResetReplay();
+                this.ReplayManager.BonusWR.Start();
+            }
+            else if (type == 2 && this.ReplayManager.StageWR != null && !this.ReplayManager.StageWR.IsPlaying)
+            {
+                this.ReplayManager.StageWR.ResetReplay();
+                this.ReplayManager.StageWR.Start();
+            }
         }
-        else if (type == 1 && this.ReplayManager.BonusWR != null && !this.ReplayManager.BonusWR.IsPlaying)
-        {
-            // Console.WriteLine($"CS2 Surf DEBUG >> internal class Map -> internal void SetReplayData -> [BonusWR] ResetReplay() and Start() {stage}");
-            this.ReplayManager.BonusWR.ResetReplay();
-            this.ReplayManager.BonusWR.Start();
-        }
-        else if (type == 2 && this.ReplayManager.StageWR != null && !this.ReplayManager.StageWR.IsPlaying)
-        {
-            // Console.WriteLine($"CS2 Surf DEBUG >> internal class Map -> internal void SetReplayData -> [StageWR] ResetReplay() and Start() {stage}");
-            this.ReplayManager.StageWR.ResetReplay();
-            this.ReplayManager.StageWR.Start();
-        }
+        );
     }
 
     public void KickReplayBot(int index)
